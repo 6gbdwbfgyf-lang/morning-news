@@ -1,0 +1,105 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>朝のニュース</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☀️</text></svg>">
+<style>
+  :root {
+    --bg: #f7f5f0; --card: #ffffff; --text: #1d1d1f; --muted: #6b6b70;
+    --line: #e4e1da; --accent: #c2410c; --chip: #f1ede4;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #141414; --card: #1e1e1f; --text: #ececec; --muted: #9a9aa0;
+            --line: #2e2e30; --accent: #fb923c; --chip: #2a2a2c; }
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; line-height: 1.75; }
+  main { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; }
+  header { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap;
+           border-bottom: 2px solid var(--text); padding-bottom: 12px; margin-bottom: 20px; }
+  h1 { margin: 0; font-size: 1.6rem; letter-spacing: .04em; }
+  .date { color: var(--muted); font-size: .95rem; }
+  select { font: inherit; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line);
+           background: var(--card); color: var(--text); }
+  .headline { font-size: 1.15rem; font-weight: 700; margin: 0 0 24px; }
+  ol { list-style: none; padding: 0; margin: 0; counter-reset: n; }
+  li { counter-increment: n; background: var(--card); border: 1px solid var(--line); border-radius: 14px;
+       padding: 18px 20px; margin-bottom: 14px; position: relative; }
+  li::before { content: counter(n); position: absolute; left: -10px; top: 16px; width: 26px; height: 26px;
+               border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: .85rem;
+               display: grid; place-items: center; }
+  .cat { display: inline-block; font-size: .75rem; background: var(--chip); color: var(--muted);
+         padding: 1px 10px; border-radius: 99px; }
+  h2 { font-size: 1.08rem; margin: 6px 0 6px; line-height: 1.5; }
+  p { margin: 0 0 8px; }
+  .why { color: var(--muted); font-size: .92rem; }
+  .why::before { content: "なぜ重要? "; font-weight: 700; color: var(--accent); }
+  .sources { font-size: .82rem; display: flex; flex-wrap: wrap; gap: 4px 12px; }
+  .sources a { color: var(--muted); }
+  .note { color: var(--muted); font-size: .8rem; margin-top: 28px; text-align: center; }
+  .empty { text-align: center; color: var(--muted); padding: 48px 0; }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <div>
+      <h1>☀️ 朝のニュース</h1>
+      <div class="date" id="date"></div>
+    </div>
+    <select id="archive" aria-label="過去の日付を選ぶ"></select>
+  </header>
+  <p class="headline" id="headline"></p>
+  <ol id="items"></ol>
+  <p class="note" id="note"></p>
+</main>
+<script>
+const $ = (id) => document.getElementById(id);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+
+function fmtDate(d) {
+  const dt = new Date(d + "T00:00:00+09:00");
+  return dt.toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "short", timeZone: "Asia/Tokyo" });
+}
+
+async function load(file) {
+  try {
+    const res = await fetch(`data/${file}.json`, { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    const d = await res.json();
+    $("date").textContent = fmtDate(d.date);
+    $("headline").textContent = d.headline;
+    $("items").innerHTML = d.items.map((it) => `
+      <li>
+        <span class="cat">${esc(it.category)}</span>
+        <h2>${esc(it.title)}</h2>
+        <p>${esc(it.summary)}</p>
+        ${it.why_it_matters ? `<p class="why">${esc(it.why_it_matters)}</p>` : ""}
+        <div class="sources">${(it.sources || []).map((s) =>
+          `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.name)}</a>`).join("")}</div>
+      </li>`).join("");
+    const t = new Date(d.generated_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tokyo" });
+    $("headline").hidden = !d.headline;
+    $("note").textContent = d.mode === "free"
+      ? `${t} 更新 ・ ${d.article_count}件の記事から主要ニュースを選びました(概要は各配信元の文章です)`
+      : `${t} 更新 ・ ${d.article_count}件の記事からAI(${d.mode === "github" ? "GitHub Models" : "Claude"})が選んで要約しました`;
+  } catch (e) {
+    $("items").innerHTML = `<div class="empty">まだニュースがありません。毎朝7時ごろに更新されます。</div>`;
+  }
+}
+
+async function init() {
+  let dates = [];
+  try { dates = await (await fetch("data/index.json", { cache: "no-store" })).json(); } catch {}
+  $("archive").innerHTML = dates.map((d) => `<option value="${esc(d)}">${esc(fmtDate(d))}</option>`).join("");
+  $("archive").hidden = dates.length === 0;
+  $("archive").onchange = (e) => load(e.target.value);
+  load(dates[0] || "latest");
+}
+init();
+</script>
+</body>
+</html>
