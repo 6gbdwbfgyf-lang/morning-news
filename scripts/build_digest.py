@@ -284,11 +284,18 @@ def _meta(page: str, *names: str) -> str:
     return ""
 
 
-def _tidy_title(title: str) -> str:
-    """「〇〇(毎日新聞) - Yahoo!ニュース」→「〇〇」"""
+def _tidy_title(title: str, limit: int = 40) -> str:
+    """「〇〇　△△　□□(毎日新聞) - Yahoo!ニュース」→「〇〇　△△」(長すぎる見出しは区切りで短く)"""
     title = re.sub(r"\s*[-|｜]\s*Yahoo!ニュース\s*$", "", title)
-    title = re.sub(r"[（(][^（）()]{1,20}[）)]\s*$", "", title)
-    return title.strip()
+    title = re.sub(r"[（(][^（）()]{1,20}[）)]\s*$", "", title).strip()
+    if len(title) <= limit:
+        return title
+    out = ""
+    for part in re.split(r"[　 ]+", title):
+        if out and len(out) + 1 + len(part) > limit:
+            break
+        out = f"{out}　{part}" if out else part
+    return out if len(out) >= 10 else title[:limit] + "…"
 
 
 def _enrich_one(a: dict) -> None:
@@ -361,6 +368,22 @@ def _term_candidates(text: str) -> list[str]:
     return seen
 
 
+def _find_original(text: str, normalized_term: str) -> str:
+    """正規化(全角→半角など)した言葉が、元の文章ではどう書かれているかを返す。"""
+    import unicodedata
+
+    norm, starts = "", []
+    for i, ch in enumerate(text):
+        n = unicodedata.normalize("NFKC", ch)
+        starts.extend([i] * len(n))
+        norm += n
+    starts.append(len(text))
+    k = norm.find(normalized_term)
+    if k < 0:
+        return ""
+    return text[starts[k] : starts[k + len(normalized_term) - 1] + 1]
+
+
 def _wikipedia_summary(term: str, cache: dict) -> dict | None:
     import urllib.parse
 
@@ -400,10 +423,9 @@ def add_glossary_from_wikipedia(items: list[dict], max_per_item: int = 3, max_lo
             info = _wikipedia_summary(cand, cache)
             if info:
                 # 画面では元の表記(全角など)で探すので、本文中の実際の表記に合わせる
-                for m in re.finditer(re.escape(cand), unicodedata.normalize("NFKC", text)):
-                    info = {**info, "term": text[m.start() : m.end()]}
-                    break
-                terms.append(info)
+                original = _find_original(text, cand)
+                if original:
+                    terms.append({**info, "term": original})
         item["terms"] = terms
     found = sum(len(i["terms"]) for i in items)
     print(f"[glossary] Wikipedia で {len(cache)}語を調べ、{found}語に解説を付けました", file=sys.stderr)
