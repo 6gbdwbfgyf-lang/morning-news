@@ -108,7 +108,10 @@ def collect_articles(now: datetime) -> list[dict]:
     for source, url in FEEDS:
         feed = feedparser.parse(url, agent="morning-news-digest/1.0")
         status = getattr(feed, "status", "?")
-        print(f"[feed] {source}: HTTP {status}, {len(feed.entries)}件", file=sys.stderr)
+        dates = [e.get("published_parsed") or e.get("updated_parsed") for e in feed.entries]
+        dates = [d for d in dates if d]
+        newest = datetime(*max(dates)[:6]).strftime("%Y-%m-%d %H:%M") if dates else "日付なし"
+        print(f"[feed] {source}: HTTP {status}, {len(feed.entries)}件, 最新 {newest} UTC", file=sys.stderr)
         if not feed.entries:
             if feed.bozo:
                 print(f"[warn] {source} を読めませんでした: {feed.bozo_exception}", file=sys.stderr)
@@ -269,12 +272,14 @@ def summarize_with_github_models(articles: list[dict], now: datetime) -> dict:
         headers={
             "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
             "Content-Type": "application/json",
-            "Accept": "application/json",
+            "Accept": "application/vnd.github+json",
+            "X-GitHub-Api-Version": "2022-11-28",
         },
     )
     try:
         with urllib.request.urlopen(req, timeout=120) as res:
             raw = res.read().decode("utf-8", "replace")
+            print(f"[models] HTTP {res.status} {res.headers.get('Content-Type')} url={res.url}", file=sys.stderr)
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"HTTP {e.code}: {e.read().decode('utf-8', 'replace')[:300]}") from e
     try:
