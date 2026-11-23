@@ -398,7 +398,7 @@ def _wikipedia_summary(term: str, cache: dict) -> dict | None:
         data = json.loads(_get(url, 200_000))
         extract = _clean(data.get("extract") or "")
         # 「〇〇（読み方、英語名など）は」の括弧部分を省いて読みやすくする
-        extract = re.sub(r"\s*[（(][^（）()]*[）)]\s*", "", extract, count=1)
+        extract = re.sub(r"^([^（(]{1,40}?)\s*[（(].*?[）)]\s*(とは|は)", r"\1\2", extract, count=1)
         extract = re.sub(r"\s+(は|とは)", r"\1", extract, count=1)
         if data.get("type") == "standard" and extract:
             first = re.split(r"(?<=。)", extract)
