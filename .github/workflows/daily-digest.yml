@@ -5,6 +5,9 @@ on:
     # GitHub の cron は UTC。21:40 UTC = 日本時間 6:40。
     # GitHub側の混雑で数分〜十数分遅れることがあるため、7時に間に合うよう早めに開始する。
     - cron: "40 21 * * *"
+    # AI(無料枠)が混雑で使えなかった日のための再挑戦(日本時間 7:15 と 8:30)。AI要約済みなら何もしない
+    - cron: "15 22 * * *"
+    - cron: "30 23 * * *"
   workflow_dispatch: {}   # Actions 画面の「Run workflow」から手動実行もできる
 
 permissions:
@@ -33,7 +36,12 @@ jobs:
           GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}         # 無料AI要約(Google AI Studioで発行)
           GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}                # 空なら自動で選ぶ
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # 登録すると Claude 要約(有料)
-        run: python scripts/build_digest.py
+        run: |
+          if [ "${{ github.event.schedule }}" = "40 21 * * *" ] || [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            python scripts/build_digest.py
+          else
+            python scripts/build_digest.py --retry-if-free
+          fi
 
       - name: 結果を保存(GitHub Pages に反映される)
         run: |

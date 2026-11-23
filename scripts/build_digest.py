@@ -595,9 +595,19 @@ def main() -> None:
     parser.add_argument("--articles", type=Path, help="RSSの代わりに記事JSONファイルを使う(テスト用)")
     parser.add_argument("--free", action="store_true", help="Claude APIキーがあっても使わない")
     parser.add_argument("--no-ai", action="store_true", help="AIを一切使わない")
+    parser.add_argument("--retry-if-free", action="store_true",
+                        help="今日の分がAIなしで作られていたときだけ作り直す(朝の再挑戦用)")
     args = parser.parse_args()
 
     now = datetime.now(JST)
+    if args.retry_if_free:
+        today = DATA_DIR / f"{now:%Y-%m-%d}.json"
+        if today.exists() and json.loads(today.read_text(encoding="utf-8")).get("mode") != "free":
+            print("今日の分はAI要約済みなので何もしません", file=sys.stderr)
+            return
+        if not os.environ.get("GEMINI_API_KEY") and not os.environ.get("ANTHROPIC_API_KEY"):
+            print("AIのキーが無いので再挑戦しません", file=sys.stderr)
+            return
     if args.articles:
         articles = json.loads(args.articles.read_text(encoding="utf-8"))
     else:
