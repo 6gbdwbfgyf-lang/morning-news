@@ -2,104 +2,283 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<title>朝のニュース</title>
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>けさのニュース</title>
+<meta name="theme-color" content="#F3F5F8" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#12161C" media="(prefers-color-scheme: dark)">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>☀️</text></svg>">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=BIZ+UDPGothic:wght@400;700&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #f7f5f0; --card: #ffffff; --text: #1d1d1f; --muted: #6b6b70;
-    --line: #e4e1da; --accent: #c2410c; --chip: #f1ede4;
+    --bg: #F3F5F8;
+    --surface: #FFFFFF;
+    --ink: #18202B;
+    --sub: #5B6573;
+    --line: #DDE2E9;
+    --link: #1F5FBF;
+    --marker: #FFE45C;
+    --marker-ink: #18202B;
+    --why: #EAF1FB;
+    --shadow: 0 -8px 30px rgba(24, 32, 43, .18);
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #141414; --card: #1e1e1f; --text: #ececec; --muted: #9a9aa0;
-            --line: #2e2e30; --accent: #fb923c; --chip: #2a2a2c; }
+    :root {
+      --bg: #12161C; --surface: #1B2129; --ink: #E8ECF1; --sub: #9AA5B4;
+      --line: #2A323D; --link: #8AB4F8; --marker: rgba(255, 214, 0, .32); --marker-ink: #FFF6C7;
+      --why: #1D2836; --shadow: 0 -8px 30px rgba(0, 0, 0, .5);
+    }
   }
   * { box-sizing: border-box; }
-  body { margin: 0; background: var(--bg); color: var(--text);
-         font-family: "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif; line-height: 1.75; }
-  main { max-width: 720px; margin: 0 auto; padding: 24px 16px 64px; }
-  header { display: flex; justify-content: space-between; align-items: flex-end; gap: 12px; flex-wrap: wrap;
-           border-bottom: 2px solid var(--text); padding-bottom: 12px; margin-bottom: 20px; }
-  h1 { margin: 0; font-size: 1.6rem; letter-spacing: .04em; }
-  .date { color: var(--muted); font-size: .95rem; }
-  select { font: inherit; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line);
-           background: var(--card); color: var(--text); }
-  .headline { font-size: 1.15rem; font-weight: 700; margin: 0 0 24px; }
-  ol { list-style: none; padding: 0; margin: 0; counter-reset: n; }
-  li { counter-increment: n; background: var(--card); border: 1px solid var(--line); border-radius: 14px;
-       padding: 18px 20px; margin-bottom: 14px; position: relative; }
-  li::before { content: counter(n); position: absolute; left: -10px; top: 16px; width: 26px; height: 26px;
-               border-radius: 50%; background: var(--accent); color: #fff; font-weight: 700; font-size: .85rem;
-               display: grid; place-items: center; }
-  .cat { display: inline-block; font-size: .75rem; background: var(--chip); color: var(--muted);
-         padding: 1px 10px; border-radius: 99px; }
-  h2 { font-size: 1.08rem; margin: 6px 0 6px; line-height: 1.5; }
-  p { margin: 0 0 8px; }
-  .why { color: var(--muted); font-size: .92rem; }
-  .why::before { content: "なぜ重要? "; font-weight: 700; color: var(--accent); }
-  .sources { font-size: .82rem; display: flex; flex-wrap: wrap; gap: 4px 12px; }
-  .sources a { color: var(--muted); }
-  .note { color: var(--muted); font-size: .8rem; margin-top: 28px; text-align: center; }
-  .empty { text-align: center; color: var(--muted); padding: 48px 0; }
+  html { -webkit-text-size-adjust: 100%; }
+  body {
+    margin: 0; background: var(--bg); color: var(--ink);
+    font-family: "BIZ UDPGothic", "Hiragino Sans", "Noto Sans JP", system-ui, sans-serif;
+    font-size: 16px; line-height: 1.85; letter-spacing: .02em;
+  }
+  main { max-width: 640px; margin: 0 auto; padding: 0 16px calc(48px + env(safe-area-inset-bottom)); }
+  button { font: inherit; color: inherit; }
+  :focus-visible { outline: 3px solid var(--link); outline-offset: 2px; border-radius: 4px; }
+
+  /* 日付の切り替え */
+  .datebar {
+    position: sticky; top: 0; z-index: 5; background: var(--bg);
+    display: flex; align-items: center; justify-content: space-between;
+    padding: calc(10px + env(safe-area-inset-top)) 0 10px; border-bottom: 1px solid var(--line);
+  }
+  .datebar h1 { margin: 0; font-size: 1rem; font-weight: 700; }
+  .navbtn {
+    border: 0; background: none; padding: 6px 10px; border-radius: 8px; color: var(--sub);
+    font-size: .9rem; cursor: pointer; min-width: 64px;
+  }
+  .navbtn:disabled { visibility: hidden; }
+  .navbtn:not(:disabled):hover { background: var(--surface); color: var(--ink); }
+
+  /* あいさつ */
+  .hello { padding: 28px 0 8px; }
+  .hello p { margin: 0; color: var(--sub); }
+  .hello h2 { margin: 6px 0 0; font-size: 1.55rem; line-height: 1.45; letter-spacing: .01em; }
+  .tip { margin-top: 14px; font-size: .88rem; color: var(--sub); }
+  .tip mark { background: linear-gradient(transparent 55%, var(--marker) 55%); color: inherit; padding: 0 1px; }
+
+  /* ジャンルで絞り込み */
+  .filters {
+    display: flex; gap: 8px; overflow-x: auto; padding: 16px 0 6px; margin: 0 -16px; padding-inline: 16px;
+    scrollbar-width: none;
+  }
+  .filters::-webkit-scrollbar { display: none; }
+  .chip {
+    flex: none; border: 1px solid var(--line); background: var(--surface); border-radius: 999px;
+    padding: 4px 14px; font-size: .88rem; cursor: pointer; color: var(--sub);
+  }
+  .chip[aria-pressed="true"] { background: var(--ink); color: var(--bg); border-color: var(--ink); }
+
+  /* ニュース */
+  .stories { list-style: none; margin: 0; padding: 0; }
+  .story { padding: 22px 0 24px; border-bottom: 1px solid var(--line); }
+  .story:last-child { border-bottom: 0; }
+  .cat { font-size: .82rem; font-weight: 700; color: var(--c, var(--sub)); }
+  .story h3 { margin: 4px 0 8px; font-size: 1.2rem; line-height: 1.55; }
+  .story.lead h3 { font-size: 1.45rem; line-height: 1.5; }
+  .story p { margin: 0; }
+  .why {
+    margin-top: 12px !important; background: var(--why); border-radius: 10px; padding: 10px 14px;
+    font-size: .94rem;
+  }
+  .why b { display: block; font-size: .8rem; color: var(--link); }
+  .src { margin-top: 10px !important; font-size: .85rem; }
+  .src a { color: var(--link); text-decoration: none; }
+  .src a:hover { text-decoration: underline; }
+
+  /* タップできる言葉:蛍光ペン */
+  .term {
+    border: 0; padding: 0 1px; margin: 0; cursor: pointer; color: inherit; font-weight: inherit;
+    line-height: inherit; letter-spacing: inherit; text-align: inherit;
+    background: linear-gradient(transparent 55%, var(--marker) 55%);
+    -webkit-tap-highlight-color: transparent;
+  }
+  .term:hover, .term[aria-expanded="true"] { background: var(--marker); color: var(--marker-ink); }
+
+  .empty { color: var(--sub); text-align: center; padding: 56px 0; }
+  .foot { color: var(--sub); font-size: .8rem; text-align: center; margin-top: 28px; }
+
+  /* 用語の解説シート */
+  .backdrop {
+    position: fixed; inset: 0; background: rgba(10, 14, 20, .35); opacity: 0; pointer-events: none;
+    transition: opacity .2s; z-index: 20;
+  }
+  .sheet {
+    position: fixed; left: 0; right: 0; bottom: 0; z-index: 21; max-width: 640px; margin: 0 auto;
+    background: var(--surface); border-radius: 18px 18px 0 0; box-shadow: var(--shadow);
+    padding: 10px 20px calc(24px + env(safe-area-inset-bottom));
+    transform: translateY(105%); transition: transform .25s cubic-bezier(.2, .8, .2, 1);
+  }
+  .open .backdrop { opacity: 1; pointer-events: auto; }
+  .open .sheet { transform: none; }
+  .grip { width: 40px; height: 4px; border-radius: 4px; background: var(--line); margin: 0 auto 14px; }
+  .sheet h4 { margin: 0 0 6px; font-size: 1.25rem; padding-right: 40px; }
+  .sheet p { margin: 0; }
+  .sheet .more { display: inline-block; margin-top: 14px; color: var(--link); font-size: .9rem; }
+  .close {
+    position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; border: 0; border-radius: 50%;
+    background: var(--bg); cursor: pointer; font-size: 1.1rem; line-height: 1;
+  }
+  @media (prefers-reduced-motion: reduce) { .sheet, .backdrop { transition: none; } }
 </style>
 </head>
 <body>
 <main>
-  <header>
-    <div>
-      <h1>☀️ 朝のニュース</h1>
-      <div class="date" id="date"></div>
-    </div>
-    <select id="archive" aria-label="過去の日付を選ぶ"></select>
-  </header>
-  <p class="headline" id="headline"></p>
-  <ol id="items"></ol>
-  <p class="note" id="note"></p>
+  <nav class="datebar" aria-label="日付">
+    <button class="navbtn" id="prev" type="button">‹ 前の日</button>
+    <h1 id="date">けさのニュース</h1>
+    <button class="navbtn" id="next" type="button">次の日 ›</button>
+  </nav>
+
+  <section class="hello">
+    <p id="greet">おはようございます</p>
+    <h2 id="headline">けさのニュース</h2>
+    <p class="tip" id="tip" hidden><mark>黄色い線</mark>の言葉はタップすると説明が出ます</p>
+  </section>
+
+  <div class="filters" id="filters" role="toolbar" aria-label="ジャンルで絞り込む"></div>
+  <ol class="stories" id="stories"></ol>
+  <p class="foot" id="foot"></p>
 </main>
+
+<div id="sheetWrap">
+  <div class="backdrop" id="backdrop"></div>
+  <div class="sheet" id="sheet" role="dialog" aria-modal="true" aria-labelledby="sheetTitle" hidden>
+    <div class="grip"></div>
+    <button class="close" id="close" type="button" aria-label="閉じる">✕</button>
+    <h4 id="sheetTitle"></h4>
+    <p id="sheetBody"></p>
+    <a class="more" id="sheetMore" target="_blank" rel="noopener">Wikipediaで詳しく見る</a>
+  </div>
+</div>
+
 <script>
 const $ = (id) => document.getElementById(id);
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const CAT_COLOR = {
+  "主要": "#C2410C", "政治": "#7C3AED", "経済": "#0F766E", "社会": "#2563EB", "国際": "#B45309",
+  "科学・IT": "#0891B2", "スポーツ": "#15803D", "文化・エンタメ": "#DB2777", "天気・災害": "#DC2626",
+};
 
-function fmtDate(d) {
-  const dt = new Date(d + "T00:00:00+09:00");
-  return dt.toLocaleDateString("ja-JP", { year: "numeric", month: "long", day: "numeric", weekday: "short", timeZone: "Asia/Tokyo" });
+let dates = [], current = null, data = null, filter = "すべて", lastTerm = null;
+
+function fmtDate(d, withYear) {
+  return new Date(d + "T00:00:00+09:00").toLocaleDateString("ja-JP", {
+    ...(withYear ? { year: "numeric" } : {}), month: "long", day: "numeric", weekday: "short", timeZone: "Asia/Tokyo",
+  });
 }
 
-async function load(file) {
-  try {
-    const res = await fetch(`data/${file}.json`, { cache: "no-store" });
-    if (!res.ok) throw new Error(res.status);
-    const d = await res.json();
-    $("date").textContent = fmtDate(d.date);
-    $("headline").textContent = d.headline;
-    $("items").innerHTML = d.items.map((it) => `
-      <li>
-        <span class="cat">${esc(it.category)}</span>
-        <h2>${esc(it.title)}</h2>
-        <p>${esc(it.summary)}</p>
-        ${it.why_it_matters ? `<p class="why">${esc(it.why_it_matters)}</p>` : ""}
-        <div class="sources">${(it.sources || []).map((s) =>
-          `<a href="${esc(s.url)}" target="_blank" rel="noopener">${esc(s.name)}</a>`).join("")}</div>
-      </li>`).join("");
-    const t = new Date(d.generated_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tokyo" });
-    $("headline").hidden = !d.headline;
-    $("note").textContent = d.mode === "free"
-      ? `${t} 更新 ・ ${d.article_count}件の記事から主要ニュースを選びました(概要は各配信元の文章です)`
-      : `${t} 更新 ・ ${d.article_count}件の記事からAI(${d.mode === "gemini" ? "Gemini" : "Claude"})が選んで要約しました`;
-  } catch (e) {
-    $("items").innerHTML = `<div class="empty">まだニュースがありません。毎朝7時ごろに更新されます。</div>`;
+// 本文中の用語を、タップできるボタンに置き換える
+function mark(text, terms, key, used) {
+  const list = terms.map((t, i) => ({ ...t, i })).filter((t) => t.term).sort((a, b) => b.term.length - a.term.length);
+  let out = [{ s: text }];
+  for (const t of list) {
+    const next = [];
+    for (const part of out) {
+      if (part.t !== undefined) { next.push(part); continue; }
+      const idx = part.s.indexOf(t.term);
+      if (idx < 0 || used.has(t.i)) { next.push(part); continue; }
+      used.add(t.i); // 同じ言葉はその記事で最初の1回だけ
+      next.push({ s: part.s.slice(0, idx) }, { s: t.term, t: t.i }, { s: part.s.slice(idx + t.term.length) });
+    }
+    out = next;
   }
+  return out.map((p) => p.t === undefined ? esc(p.s)
+    : `<button type="button" class="term" data-key="${key}" data-i="${p.t}" aria-haspopup="dialog" aria-expanded="false">${esc(p.s)}</button>`).join("");
 }
 
-async function init() {
-  let dates = [];
-  try { dates = await (await fetch("data/index.json", { cache: "no-store" })).json(); } catch {}
-  $("archive").innerHTML = dates.map((d) => `<option value="${esc(d)}">${esc(fmtDate(d))}</option>`).join("");
-  $("archive").hidden = dates.length === 0;
-  $("archive").onchange = (e) => load(e.target.value);
-  load(dates[0] || "latest");
+function render() {
+  const items = data.items.map((it, n) => ({ ...it, n }));
+  const cats = ["すべて", ...new Set(items.map((it) => it.category))];
+  $("filters").innerHTML = cats.map((c) =>
+    `<button type="button" class="chip" aria-pressed="${c === filter}" data-cat="${esc(c)}">${esc(c)}</button>`).join("");
+  const shown = items.filter((it) => filter === "すべて" || it.category === filter);
+  let hasTerms = false;
+  $("stories").innerHTML = shown.map((it, idx) => {
+    const terms = it.terms || [], used = new Set();
+    if (terms.length) hasTerms = true;
+    const title = mark(it.title, terms, it.n, used);
+    const summary = mark(it.summary, terms, it.n, used);
+    const why = it.why_it_matters ? mark(it.why_it_matters, terms, it.n, used) : "";
+    const src = (it.sources || [])[0];
+    return `<li class="story${idx === 0 && filter === "すべて" ? " lead" : ""}">
+      <span class="cat" style="--c:${CAT_COLOR[it.category] || "var(--sub)"}">${esc(it.category)}</span>
+      <h3>${title}</h3>
+      <p>${summary}</p>
+      ${why ? `<p class="why"><b>なぜ大事?</b>${why}</p>` : ""}
+      ${src ? `<p class="src"><a href="${esc(src.url)}" target="_blank" rel="noopener">元の記事を読む</a></p>` : ""}
+    </li>`;
+  }).join("");
+  $("tip").hidden = !hasTerms;
 }
-init();
+
+async function load(date) {
+  current = date;
+  const i = dates.indexOf(date);
+  $("prev").disabled = i < 0 || i >= dates.length - 1;
+  $("next").disabled = i <= 0;
+  try {
+    const res = await fetch(`data/${date || "latest"}.json`, { cache: "no-store" });
+    if (!res.ok) throw new Error(res.status);
+    data = await res.json();
+  } catch {
+    $("stories").innerHTML = `<li class="empty">この日のニュースはまだありません。毎朝7時ごろに届きます。</li>`;
+    return;
+  }
+  filter = "すべて";
+  const isToday = i === 0;
+  $("date").textContent = fmtDate(data.date);
+  $("greet").textContent = isToday ? "おはようございます" : fmtDate(data.date, true) + " のニュース";
+  const n = data.items.length;
+  $("headline").textContent = data.headline || `けさのニュースは${n}本。${Math.max(2, Math.round(n * 0.3))}分で読めます`;
+  render();
+  const t = new Date(data.generated_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tokyo" });
+  const how = data.mode === "free" ? "配信元の記事から選びました" : `AI(${data.mode === "gemini" ? "Gemini" : "Claude"})が選んで要約しました`;
+  $("foot").textContent = `${t} 更新。${data.article_count}本の記事から${how}。用語の説明はWikipediaなどによるものです。`;
+  window.scrollTo({ top: 0 });
+}
+
+// 用語の解説シート
+function openSheet(btn) {
+  const it = data.items[+btn.dataset.key];
+  const t = (it.terms || [])[+btn.dataset.i];
+  if (!t) return;
+  lastTerm = btn;
+  btn.setAttribute("aria-expanded", "true");
+  $("sheetTitle").textContent = t.term;
+  $("sheetBody").textContent = t.explanation;
+  $("sheetMore").hidden = !t.url;
+  if (t.url) $("sheetMore").href = t.url;
+  $("sheet").hidden = false;
+  requestAnimationFrame(() => { $("sheetWrap").classList.add("open"); $("close").focus(); });
+}
+function closeSheet() {
+  $("sheetWrap").classList.remove("open");
+  setTimeout(() => { $("sheet").hidden = true; }, 250);
+  if (lastTerm) { lastTerm.setAttribute("aria-expanded", "false"); lastTerm.focus(); lastTerm = null; }
+}
+
+document.addEventListener("click", (e) => {
+  const term = e.target.closest(".term");
+  if (term) return openSheet(term);
+  const chip = e.target.closest(".chip");
+  if (chip) { filter = chip.dataset.cat; render(); }
+});
+$("close").onclick = closeSheet;
+$("backdrop").onclick = closeSheet;
+document.addEventListener("keydown", (e) => { if (e.key === "Escape" && !$("sheet").hidden) closeSheet(); });
+$("prev").onclick = () => load(dates[dates.indexOf(current) + 1]);
+$("next").onclick = () => load(dates[dates.indexOf(current) - 1]);
+
+(async () => {
+  try { dates = await (await fetch("data/index.json", { cache: "no-store" })).json(); } catch {}
+  load(dates[0]);
+})();
 </script>
 </body>
 </html>

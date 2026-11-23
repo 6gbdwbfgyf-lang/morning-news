@@ -72,8 +72,21 @@ DIGEST_SCHEMA = {
                         "items": {"type": "integer"},
                         "description": "根拠にした記事の id(1つ以上)",
                     },
+                    "terms": {
+                        "type": "array",
+                        "description": "見出し・要約に出てくる、知らない人がつまずきそうな言葉(0〜3個)",
+                        "items": {
+                            "type": "object",
+                            "properties": {
+                                "term": {"type": "string", "description": "本文中の表記そのまま"},
+                                "explanation": {"type": "string", "description": "中学生にも分かる1〜2文の説明"},
+                            },
+                            "required": ["term", "explanation"],
+                            "additionalProperties": False,
+                        },
+                    },
                 },
-                "required": ["title", "summary", "why_it_matters", "category", "source_ids"],
+                "required": ["title", "summary", "why_it_matters", "category", "source_ids", "terms"],
                 "additionalProperties": False,
             },
         },
@@ -95,6 +108,7 @@ SYSTEM_PROMPT = f"""あなたは日本の朝のニュース番組の編集者で
 書き方:
 - 記事に書かれている事実だけを使い、推測で補わない
 - 要約は2〜3文、平易な言葉で
+- 見出しは略語や業界用語を避け、「誰が・何をした」が一読で分かる20〜35字の文にする
 """
 
 
@@ -165,7 +179,10 @@ def summarize(articles: list[dict], now: datetime) -> dict:
     if response.stop_reason == "max_tokens":
         raise RuntimeError("出力が長すぎて途中で切れました")
     text = next(b.text for b in response.content if b.type == "text")
-    return json.loads(text)
+    digest = json.loads(text)
+    for it in digest["items"]:
+        it["terms"] = _check_terms(it.get("terms"), f"{it['title']} {it['summary']} {it['why_it_matters']}")
+    return digest
 
 
 FEED_CATEGORY = {
@@ -213,6 +230,16 @@ def _clean(text: str) -> str:
     return _INVISIBLE.sub("", text).strip()
 
 
+def _sentences(text: str, n: int) -> str:
+    """n文字以内で、文の切れ目(。)までにそろえる。途中で切れた文は落とす。"""
+    text = re.sub(r"^[［\[【][^］\]】]{1,30}[］\]】]\s*-?\s*", "", text)  # 先頭の【ワシントン共同】など
+    if len(text) <= n and text.endswith("。"):
+        return text
+    cut = text[:n]
+    end = cut.rfind("。")
+    return cut[: end + 1] if end >= 20 else _short(text, n)
+
+
 def _short(text: str, n: int) -> str:
     return text if len(text) <= n else text[:n] + "…"
 
@@ -221,8 +248,8 @@ def pick_without_ai(articles: list[dict]) -> dict:
     """完全無料モード: ルールで約10件選び、RSSの概要文をそのまま使う。"""
     items = [
         {
-            "title": a["title"],
-            "summary": _short(a["description"], 140),
+            "title": a.get("full_title") or a["title"],
+            "summary": _sentences(a["description"], 170),
             "why_it_matters": "",
             "category": FEED_CATEGORY.get(a["source"], "その他"),
             "source_ids": [a["id"]],
@@ -232,41 +259,166 @@ def pick_without_ai(articles: list[dict]) -> dict:
     return {"headline": "", "items": items}
 
 
-def _fetch_description(url: str) -> str:
-    """記事ページの <meta name="description"> / og:description を取ってくる。"""
-    import html
+UA = {"User-Agent": "Mozilla/5.0 (compatible; morning-news-digest/1.0)"}
+
+
+def _get(url: str, limit: int = 400_000) -> str:
     import urllib.request
 
-    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (morning-news-digest)"})
+    req = urllib.request.Request(url, headers=UA)
     with urllib.request.urlopen(req, timeout=15) as res:
-        page = res.read(300_000).decode("utf-8", "replace")
-    for pat in (
-        r'<meta[^>]+property="og:description"[^>]+content="([^"]*)"',
-        r'<meta[^>]+name="description"[^>]+content="([^"]*)"',
-        r'<meta[^>]+content="([^"]*)"[^>]+(?:property="og:description"|name="description")',
-    ):
-        m = re.search(pat, page)
-        if m and m.group(1).strip():
-            return html.unescape(m.group(1)).strip()
+        return res.read(limit).decode("utf-8", "replace")
+
+
+def _meta(page: str, *names: str) -> str:
+    import html
+
+    for name in names:
+        for pat in (
+            rf'<meta[^>]+(?:property|name)="{name}"[^>]+content="([^"]*)"',
+            rf'<meta[^>]+content="([^"]*)"[^>]+(?:property|name)="{name}"',
+        ):
+            m = re.search(pat, page)
+            if m and m.group(1).strip():
+                return _clean(html.unescape(m.group(1)))
     return ""
 
 
+def _tidy_title(title: str) -> str:
+    """「〇〇(毎日新聞) - Yahoo!ニュース」→「〇〇」"""
+    title = re.sub(r"\s*[-|｜]\s*Yahoo!ニュース\s*$", "", title)
+    title = re.sub(r"[（(][^（）()]{1,20}[）)]\s*$", "", title)
+    return title.strip()
+
+
+def _enrich_one(a: dict) -> None:
+    """Yahoo!のトピックスページ → 元記事ページ をたどり、正式な見出しと冒頭の文章を取る。"""
+    page = _get(a["link"])
+    if not a["description"]:
+        a["description"] = _meta(page, "og:description", "description")
+    m = re.search(r'https://news\.yahoo\.co\.jp/articles/[0-9a-zA-Z]+', page)
+    if not m:
+        return
+    a["article_url"] = m.group(0)
+    article = _get(m.group(0))
+    full = _tidy_title(_meta(article, "og:title"))
+    if full and len(full) > len(a["title"]):
+        a["full_title"] = full
+    desc = _meta(article, "og:description", "description")
+    if len(desc) > len(a["description"]):
+        a["description"] = desc
+
+
 def enrich_descriptions(articles: list[dict]) -> None:
-    """RSSに概要が無い記事は、記事ページから概要文を補う(並列で取得)。"""
+    """記事ページから正式な見出しと概要文を補う(並列で取得)。"""
     from concurrent.futures import ThreadPoolExecutor
 
-    targets = [a for a in articles if not a["description"] and a["link"]]
+    targets = [a for a in articles if a["link"]]
 
     def work(a: dict) -> None:
         try:
-            a["description"] = _clean(_fetch_description(a["link"]))
+            _enrich_one(a)
         except Exception as e:
-            print(f"[warn] 概要の取得に失敗: {a['title']} ({e})", file=sys.stderr)
+            print(f"[warn] 記事ページの取得に失敗: {a['title']} ({e})", file=sys.stderr)
 
     with ThreadPoolExecutor(max_workers=6) as ex:
         list(ex.map(work, targets))
-    ok = sum(1 for a in targets if a["description"])
-    print(f"[desc] {len(targets)}件中 {ok}件の概要を記事ページから取得", file=sys.stderr)
+    print(
+        f"[enrich] {len(targets)}件中 概要 {sum(1 for a in targets if a['description'])}件 /"
+        f" 正式な見出し {sum(1 for a in targets if a.get('full_title'))}件",
+        file=sys.stderr,
+    )
+    for a in targets[:3]:
+        print(f"[enrich] 例: {a['title']} → {a.get('full_title', '(見出しなし)')}", file=sys.stderr)
+
+
+# ---- 用語解説(タップで表示) ---------------------------------------------------
+# AIなしのときは、記事中の固有名詞や略語らしき言葉を拾い、Wikipedia の冒頭の説明を付ける。
+COMMON_WORDS = set(
+    "ニュース インタビュー コメント サービス システム データ ネット スマートフォン スマホ クレジットカード "
+    "デビットカード カード チーム メンバー グループ ファン ボーカル プロ トップ ポイント ケース レベル "
+    "イベント プラン センター ライブ テレビ ドラマ アニメ ゲーム メディア ビジネス マーケット リスク "
+    "コスト ルール スタート シーズン ゴール ホーム オンライン アプリ ユーザー サイト ページ".split()
+)
+TERM_PATTERNS = [
+    r"[一-龥ァ-ヴー]{1,8}(?:海峡|条約|会議|機構|協定|委員会|同盟|連合|銀行|法案|制度|政策)",
+    r"[A-Z][A-Z0-9&]{1,9}",                         # COP31, CEO, NATO など
+    r"[ァ-ヴー]{2,}(?:・[ァ-ヴー]{2,})*",               # エヌビディア、ジェンスン・フアン など
+]
+
+
+def _term_candidates(text: str) -> list[str]:
+    import unicodedata
+
+    text = unicodedata.normalize("NFKC", text)
+    seen: list[str] = []
+    for pat in TERM_PATTERNS:
+        for m in re.finditer(pat, text):
+            t = m.group(0)
+            if t in COMMON_WORDS or len(t) < 2 or any(t in x for x in seen):
+                continue
+            seen.append(t)
+    return seen
+
+
+def _wikipedia_summary(term: str, cache: dict) -> dict | None:
+    import urllib.parse
+
+    if term in cache:
+        return cache[term]
+    result = None
+    try:
+        url = "https://ja.wikipedia.org/api/rest_v1/page/summary/" + urllib.parse.quote(term) + "?redirect=true"
+        data = json.loads(_get(url, 200_000))
+        extract = _clean(data.get("extract") or "")
+        if data.get("type") == "standard" and extract:
+            first = re.split(r"(?<=。)", extract)
+            text = "".join(first[:2]) if len(first[0]) < 60 else first[0]
+            result = {
+                "term": term,
+                "explanation": _short(text, 160),
+                "url": (data.get("content_urls") or {}).get("mobile", {}).get("page", ""),
+            }
+    except Exception:
+        pass
+    cache[term] = result
+    return result
+
+
+def add_glossary_from_wikipedia(items: list[dict], max_per_item: int = 3, max_lookups: int = 45) -> None:
+    import unicodedata
+
+    cache: dict = {}
+    for item in items:
+        if item.get("terms"):
+            continue
+        text = item["title"] + " " + item["summary"]
+        terms = []
+        for cand in _term_candidates(text):
+            if len(cache) >= max_lookups or len(terms) >= max_per_item:
+                break
+            info = _wikipedia_summary(cand, cache)
+            if info:
+                # 画面では元の表記(全角など)で探すので、本文中の実際の表記に合わせる
+                for m in re.finditer(re.escape(cand), unicodedata.normalize("NFKC", text)):
+                    info = {**info, "term": text[m.start() : m.end()]}
+                    break
+                terms.append(info)
+        item["terms"] = terms
+    found = sum(len(i["terms"]) for i in items)
+    print(f"[glossary] Wikipedia で {len(cache)}語を調べ、{found}語に解説を付けました", file=sys.stderr)
+
+
+def _check_terms(terms, text: str) -> list[dict]:
+    """AIが返した用語のうち、本文に実際に出てくるものだけ残す。"""
+    out = []
+    for t in terms or []:
+        term = str(t.get("term") or "").strip()
+        exp = str(t.get("explanation") or "").strip()
+        if term and exp and term in text:
+            out.append({"term": term, "explanation": exp,
+                        "url": "https://ja.wikipedia.org/w/index.php?search=" + term})
+    return out[:4]
 
 
 # ---- 無料AI要約: Google Gemini API の無料枠 ------------------------------------
@@ -288,7 +440,12 @@ FREE_AI_PROMPT = f"""あなたは日本の朝のニュース番組の編集者�
 {{"headline": "今朝のニュース全体を一言で(30字程度)",
   "items": [{{"id": 候補の番号, "title": "分かりやすい見出し", "summary": "2〜3文の要約",
              "why_it_matters": "なぜ重要か・生活への影響を1文で",
-             "category": "{'/'.join(CATEGORIES)} のどれか"}}]}}"""
+             "category": "{'/'.join(CATEGORIES)} のどれか",
+             "terms": [{{"term": "見出しか要約に出てくる難しい言葉(そのままの表記)",
+                         "explanation": "中学生にも分かる1〜2文の説明(どんな組織・人・制度か)"}}]}}]}}
+
+見出しのルール: 略語や業界用語を避け、「誰が・何をした」が一読で分かる20〜35字の文にする。
+terms のルール: 組織名・人名・略語・専門用語など、知らない人がつまずきそうな言葉を各記事0〜3個。"""
 
 
 def _call_gemini(model: str, prompt: str) -> str:
@@ -317,7 +474,10 @@ def _call_gemini(model: str, prompt: str) -> str:
 
 
 def summarize_with_gemini(candidates: list[dict], now: datetime) -> dict:
-    lines = [f"[{a['id']}] ({a['source']}) {a['title']} — {_short(a['description'], 150)}" for a in candidates]
+    lines = [
+        f"[{a['id']}] ({a['source']}) {a.get('full_title') or a['title']} — {_short(a['description'], 150)}"
+        for a in candidates
+    ]
     prompt = f"今日は {now:%Y年%m月%d日} です。候補記事:\n" + "\n".join(lines)
     errors = []
     for model in GEMINI_MODELS:
@@ -347,6 +507,9 @@ def summarize_with_gemini(candidates: list[dict], now: datetime) -> dict:
                 "why_it_matters": str(it.get("why_it_matters") or ""),
                 "category": it.get("category") if it.get("category") in CATEGORIES else "その他",
                 "source_ids": [it["id"]],
+                "terms": _check_terms(
+                    it.get("terms"), f"{it.get('title')} {it['summary']} {it.get('why_it_matters')}"
+                ),
             }
         )
     if len(items) < 3:
@@ -359,7 +522,11 @@ def attach_sources(digest: dict, articles: list[dict]) -> list[dict]:
     items = []
     for item in digest["items"]:
         sources = [
-            {"name": by_id[i]["source"], "title": by_id[i]["title"], "url": by_id[i]["link"]}
+            {
+                "name": by_id[i]["source"],
+                "title": by_id[i].get("full_title") or by_id[i]["title"],
+                "url": by_id[i].get("article_url") or by_id[i]["link"],
+            }
             for i in item.pop("source_ids")
             if i in by_id
         ]
@@ -415,6 +582,7 @@ def main() -> None:
                 mode, digest = "gemini", summarize_with_gemini(candidates, now)
             except Exception as e:  # 無料枠の上限などで失敗しても、AIなしで必ず更新する
                 print(f"[warn] Gemini での要約に失敗したためAIなしで作成します: {e}", file=sys.stderr)
+    add_glossary_from_wikipedia(digest["items"])  # AIが付けなかった記事は Wikipedia で補う
     date_str = now.strftime("%Y-%m-%d")
     result = {
         "date": date_str,
