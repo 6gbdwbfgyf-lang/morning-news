@@ -362,6 +362,9 @@ def _term_candidates(text: str) -> list[str]:
     for pat in TERM_PATTERNS:
         for m in re.finditer(pat, text):
             t = m.group(0)
+            # 「トランプ氏」「ドジャースの佐々木選手」のような人名は同名の別物を引きやすいので除く
+            if re.match(r"(?:氏|さん|米|大統領|首相|選手|監督|容疑者|被告)", text[m.end() : m.end() + 3]):
+                continue
             if t in COMMON_WORDS or len(t) < 2 or any(t in x for x in seen):
                 continue
             seen.append(t)
@@ -394,6 +397,9 @@ def _wikipedia_summary(term: str, cache: dict) -> dict | None:
         url = "https://ja.wikipedia.org/api/rest_v1/page/summary/" + urllib.parse.quote(term) + "?redirect=true"
         data = json.loads(_get(url, 200_000))
         extract = _clean(data.get("extract") or "")
+        # 「〇〇（読み方、英語名など）は」の括弧部分を省いて読みやすくする
+        extract = re.sub(r"\s*[（(][^（）()]*[）)]\s*", "", extract, count=1)
+        extract = re.sub(r"\s+(は|とは)", r"\1", extract, count=1)
         if data.get("type") == "standard" and extract:
             first = re.split(r"(?<=。)", extract)
             text = "".join(first[:2]) if len(first[0]) < 60 else first[0]
