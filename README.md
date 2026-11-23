@@ -5,8 +5,8 @@
 ## しくみ
 
 1. **GitHub Actions** が毎朝 6:40(JST)に自動起動(`.github/workflows/daily-digest.yml`)
-2. `scripts/build_digest.py` が NHK・Yahoo!ニュースのRSSから直近30時間の記事を集める
-3. AIが約10件を選んで要約する(下表)
+2. `scripts/build_digest.py` が Yahoo!ニュースのRSSから直近30時間の記事を集める
+3. 約10件を選んで要約する(下表)
 4. 結果を `docs/data/YYYY-MM-DD.json` に保存してコミット
 5. **GitHub Pages** が `docs/` をそのままWebページとして公開(過去の日付も選べます)
 
@@ -16,17 +16,18 @@
 
 | モード | 条件 | 費用 | 内容 |
 |---|---|---|---|
-| **無料AI要約(既定)** | 何もしなくてOK | 無料 | GitHub Models の無料枠を使い、AIが候補25件から約10件を選んで要約と「なぜ重要か」を書きます。GitHub Actions に最初から付いている `GITHUB_TOKEN` を使うので登録やAPIキーは不要です。 |
-| AIなし | 上の無料枠が使えなかった日 | 無料 | 主要ニュースをルールで約10件選び、配信元の概要文をそのまま表示します。ページが更新されない日はありません。 |
-| Claude 要約 | `ANTHROPIC_API_KEY` を登録 | 1日数円〜十数円 | Claude が全記事から選んで要約。いちばん高品質です。 |
+| AIなし | 何もしない | 無料 | 主要ニュースをルールで約10件選び、記事ページの概要文をそのまま表示 |
+| **無料AI要約** | `GEMINI_API_KEY` を登録 | 無料 | Google Gemini の無料枠で、候補30件から約10件を選んで要約と「なぜ重要か」を作成 |
+| Claude 要約 | `ANTHROPIC_API_KEY` を登録 | 1日数円〜十数円 | Claude が全記事から選んで要約。いちばん高品質 |
 
-GitHub Models の無料枠は「試作向け」で、1日のリクエスト数や1回の文字数に上限があります(このアプリは1日1回・数千トークンなので通常は収まります)。使うモデルはリポジトリの変数 `GITHUB_MODELS_MODEL` で変えられます(既定 `openai/gpt-4.1-mini`)。
+Gemini の無料枠には1日の回数上限があり(このアプリは1日1回なので通常は収まります)、無料枠では送った内容がGoogleのサービス改善に使われることがあります(ニュースは公開情報なので実害は小さい想定)。失敗した日は自動で「AIなし」になり、更新が止まることはありません。モデルはリポジトリの変数 `GEMINI_MODEL` で固定もできます。
+
+ニュースソースは Yahoo!ニュースのトピックスRSS です(NHKの旧RSSは2026年8月で更新停止)。
 
 ## セットアップ
 
 1. このフォルダをGitHubの**公開(Public)リポジトリ**にpush(非公開だとPagesが有料プラン限定のため)
-2. (Claude 要約を使う場合のみ)リポジトリの **Settings → Secrets and variables → Actions** で `ANTHROPIC_API_KEY` を登録
-   (キーは https://console.anthropic.com/ で発行)
+2. (AI要約を使う場合)リポジトリの **Settings → Secrets and variables → Actions** で `GEMINI_API_KEY`(https://aistudio.google.com/apikey で無料発行)または `ANTHROPIC_API_KEY` を登録
 3. **Settings → Pages** で「Deploy from a branch」→ ブランチ `main`、フォルダ `/docs` を選択
 4. **Actions → 朝のニュースを作る → Run workflow** で一度手動実行して動作確認
 

@@ -9,7 +9,6 @@ on:
 
 permissions:
   contents: write
-  models: read   # GitHub Models(無料AI)を使うため
 
 concurrency:
   group: daily-digest
@@ -31,9 +30,9 @@ jobs:
 
       - name: ニュースを取得して要約
         env:
-          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # 未登録なら無料のGitHub Modelsを使う
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_MODELS_MODEL: ${{ vars.GITHUB_MODELS_MODEL || 'openai/gpt-4.1-mini' }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}         # 無料AI要約(Google AI Studioで発行)
+          GEMINI_MODEL: ${{ vars.GEMINI_MODEL }}                # 空なら自動で選ぶ
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}   # 登録すると Claude 要約(有料)
         run: python scripts/build_digest.py
 
       - name: 結果を保存(GitHub Pages に反映される)

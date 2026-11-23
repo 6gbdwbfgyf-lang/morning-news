@@ -85,7 +85,7 @@ async function load(file) {
     $("headline").hidden = !d.headline;
     $("note").textContent = d.mode === "free"
       ? `${t} 更新 ・ ${d.article_count}件の記事から主要ニュースを選びました(概要は各配信元の文章です)`
-      : `${t} 更新 ・ ${d.article_count}件の記事からAI(${d.mode === "github" ? "GitHub Models" : "Claude"})が選んで要約しました`;
+      : `${t} 更新 ・ ${d.article_count}件の記事からAI(${d.mode === "gemini" ? "Gemini" : "Claude"})が選んで要約しました`;
   } catch (e) {
     $("items").innerHTML = `<div class="empty">まだニュースがありません。毎朝7時ごろに更新されます。</div>`;
   }

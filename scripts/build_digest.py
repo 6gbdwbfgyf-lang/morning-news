@@ -6,13 +6,12 @@
 
 要約に使うAIは、環境変数で自動的に切り替わる:
 - ANTHROPIC_API_KEY があれば Claude(有料・高品質)
-- なければ GITHUB_TOKEN で GitHub Models(無料枠。GitHub Actions では自動で使える)
-- どちらも無い・失敗したときは AIなし(RSSの概要文をそのまま載せる)
+- なければ GEMINI_API_KEY で Google Gemini の無料枠
+- どちらも無い・失敗したときは AIなし(記事の概要文をそのまま載せる)
 
 使い方:
-    GITHUB_TOKEN=... python scripts/build_digest.py        # 無料AI要約
-    python scripts/build_digest.py --no-ai                 # AIなし
-    python scripts/build_digest.py --dry-run   # Claude を呼ばず、集めた記事だけ確認
+    python scripts/build_digest.py                       # AIなし
+    GEMINI_API_KEY=... python scripts/build_digest.py    # 無料AI要約
 """
 
 from __future__ import annotations
@@ -20,6 +19,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import sys
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -37,19 +37,17 @@ LOOKBACK_HOURS = 30  # 前日朝〜当日朝までをカバー
 
 # ニュースソース(RSS)。追加・削除はここを編集するだけでOK。
 FEEDS: list[tuple[str, str]] = [
-    ("NHK 主要", "https://www3.nhk.or.jp/rss/news/cat0.xml"),
-    ("NHK 社会", "https://www3.nhk.or.jp/rss/news/cat1.xml"),
-    ("NHK 科学・医療", "https://www3.nhk.or.jp/rss/news/cat3.xml"),
-    ("NHK 政治", "https://www3.nhk.or.jp/rss/news/cat4.xml"),
-    ("NHK 経済", "https://www3.nhk.or.jp/rss/news/cat5.xml"),
-    ("NHK 国際", "https://www3.nhk.or.jp/rss/news/cat6.xml"),
-    ("NHK スポーツ", "https://www3.nhk.or.jp/rss/news/cat7.xml"),
-    ("Yahoo!ニュース 主要", "https://news.yahoo.co.jp/rss/topics/top-picks.xml"),
-    ("Yahoo!ニュース 国内", "https://news.yahoo.co.jp/rss/topics/domestic.xml"),
-    ("Yahoo!ニュース 国際", "https://news.yahoo.co.jp/rss/topics/world.xml"),
-    ("Yahoo!ニュース 経済", "https://news.yahoo.co.jp/rss/topics/business.xml"),
-    ("Yahoo!ニュース IT", "https://news.yahoo.co.jp/rss/topics/it.xml"),
+    ("主要", "https://news.yahoo.co.jp/rss/topics/top-picks.xml"),
+    ("国内", "https://news.yahoo.co.jp/rss/topics/domestic.xml"),
+    ("国際", "https://news.yahoo.co.jp/rss/topics/world.xml"),
+    ("経済", "https://news.yahoo.co.jp/rss/topics/business.xml"),
+    ("IT", "https://news.yahoo.co.jp/rss/topics/it.xml"),
+    ("科学", "https://news.yahoo.co.jp/rss/topics/science.xml"),
+    ("スポーツ", "https://news.yahoo.co.jp/rss/topics/sports.xml"),
+    ("エンタメ", "https://news.yahoo.co.jp/rss/topics/entertainment.xml"),
+    ("地域", "https://news.yahoo.co.jp/rss/topics/local.xml"),
 ]
+# ※ NHKの旧RSS(www3.nhk.or.jp/rss/…)は2026年8月で更新が止まっているため使わない
 
 CATEGORIES = ["政治", "経済", "社会", "国際", "科学・IT", "スポーツ", "文化・エンタメ", "天気・災害", "その他"]
 
@@ -171,17 +169,11 @@ def summarize(articles: list[dict], now: datetime) -> dict:
 
 
 FEED_CATEGORY = {
-    "NHK 主要": "主要", "NHK 社会": "社会", "NHK 科学・医療": "科学・IT", "NHK 政治": "政治",
-    "NHK 経済": "経済", "NHK 国際": "国際", "NHK スポーツ": "スポーツ",
-    "Yahoo!ニュース 主要": "主要", "Yahoo!ニュース 国内": "社会", "Yahoo!ニュース 国際": "国際",
-    "Yahoo!ニュース 経済": "経済", "Yahoo!ニュース IT": "科学・IT",
+    "主要": "主要", "国内": "社会", "国際": "国際", "経済": "経済", "IT": "科学・IT",
+    "科学": "科学・IT", "スポーツ": "スポーツ", "エンタメ": "文化・エンタメ", "地域": "社会",
 }
-# 無料モードで記事を選ぶ順番(編集部が選んだ「主要」を優先し、その後ジャンルを順番に回る)
-FREE_ORDER = [
-    "NHK 主要", "Yahoo!ニュース 主要", "NHK 政治", "NHK 経済", "NHK 国際",
-    "NHK 社会", "NHK 科学・医療", "NHK スポーツ", "Yahoo!ニュース 国内",
-    "Yahoo!ニュース 国際", "Yahoo!ニュース 経済", "Yahoo!ニュース IT",
-]
+# 記事を選ぶ順番(編集部が選んだ「主要」を優先し、その後ジャンルを順番に回る)
+FREE_ORDER = ["主要", "国内", "経済", "国際", "IT", "科学", "スポーツ", "エンタメ", "地域"]
 
 
 def _bigrams(s: str) -> set[str]:
@@ -232,14 +224,55 @@ def pick_without_ai(articles: list[dict]) -> dict:
     return {"headline": "", "items": items}
 
 
-# ---- 無料AI要約: GitHub Models ----------------------------------------------
-# GitHub Actions の GITHUB_TOKEN だけで使える無料のAI(登録・APIキー不要)。
-# 無料枠は1回の入力が約8,000トークンまでなので、ルールで候補を絞ってから渡す。
-GITHUB_MODELS_URL = "https://models.github.ai/inference/chat/completions"
-GITHUB_MODEL = os.environ.get("GITHUB_MODELS_MODEL", "openai/gpt-4.1-mini")
-CANDIDATE_COUNT = 25
+def _fetch_description(url: str) -> str:
+    """記事ページの <meta name="description"> / og:description を取ってくる。"""
+    import html
+    import urllib.request
 
-GITHUB_PROMPT = f"""あなたは日本の朝のニュース番組の編集者です。
+    req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0 (morning-news-digest)"})
+    with urllib.request.urlopen(req, timeout=15) as res:
+        page = res.read(300_000).decode("utf-8", "replace")
+    for pat in (
+        r'<meta[^>]+property="og:description"[^>]+content="([^"]*)"',
+        r'<meta[^>]+name="description"[^>]+content="([^"]*)"',
+        r'<meta[^>]+content="([^"]*)"[^>]+(?:property="og:description"|name="description")',
+    ):
+        m = re.search(pat, page)
+        if m and m.group(1).strip():
+            return html.unescape(m.group(1)).strip()
+    return ""
+
+
+def enrich_descriptions(articles: list[dict]) -> None:
+    """RSSに概要が無い記事は、記事ページから概要文を補う(並列で取得)。"""
+    from concurrent.futures import ThreadPoolExecutor
+
+    targets = [a for a in articles if not a["description"] and a["link"]]
+
+    def work(a: dict) -> None:
+        try:
+            a["description"] = _fetch_description(a["link"])
+        except Exception as e:
+            print(f"[warn] 概要の取得に失敗: {a['title']} ({e})", file=sys.stderr)
+
+    with ThreadPoolExecutor(max_workers=6) as ex:
+        list(ex.map(work, targets))
+    ok = sum(1 for a in targets if a["description"])
+    print(f"[desc] {len(targets)}件中 {ok}件の概要を記事ページから取得", file=sys.stderr)
+
+
+# ---- 無料AI要約: Google Gemini API の無料枠 ------------------------------------
+# GEMINI_API_KEY(Google AI Studio で無料発行)があれば使う。
+# 無料枠のモデルは入れ替わることがあるので、順番に試して使えたものを使う。
+GEMINI_MODELS = [m for m in os.environ.get("GEMINI_MODEL", "").split(",") if m] or [
+    "gemini-3.6-flash",
+    "gemini-3.5-flash-lite",
+    "gemini-3.1-flash-lite",
+    "gemini-2.5-flash",
+]
+CANDIDATE_COUNT = 30
+
+FREE_AI_PROMPT = f"""あなたは日本の朝のニュース番組の編集者です。
 候補記事から、前日から今朝にかけての重要なニュースを{TARGET_COUNT}件選び、重要度の高い順に並べてください。
 同じ出来事は1件にまとめ、ジャンルが偏りすぎないようにします。記事に書かれた事実だけを使い、推測で補わないでください。
 
@@ -250,42 +283,44 @@ GITHUB_PROMPT = f"""あなたは日本の朝のニュース番組の編集者で
              "category": "{'/'.join(CATEGORIES)} のどれか"}}]}}"""
 
 
-def summarize_with_github_models(articles: list[dict], now: datetime) -> dict:
+def _call_gemini(model: str, prompt: str) -> str:
     import urllib.error
     import urllib.request
 
-    candidates = pick_candidates(articles, CANDIDATE_COUNT)
-    lines = [f"[{a['id']}] {a['title']} — {_short(a['description'], 100)}" for a in candidates]
     body = {
-        "model": GITHUB_MODEL,
-        "messages": [
-            {"role": "system", "content": GITHUB_PROMPT},
-            {"role": "user", "content": f"今日は {now:%Y年%m月%d日} です。候補記事:\n" + "\n".join(lines)},
-        ],
-        "response_format": {"type": "json_object"},
-        "max_tokens": 3500,
-        "temperature": 0.3,
+        "systemInstruction": {"parts": [{"text": FREE_AI_PROMPT}]},
+        "contents": [{"role": "user", "parts": [{"text": prompt}]}],
+        "generationConfig": {"responseMimeType": "application/json", "temperature": 0.3},
     }
     req = urllib.request.Request(
-        GITHUB_MODELS_URL,
+        f"https://generativelanguage.googleapis.com/v1beta/models/{model}:generateContent",
         data=json.dumps(body).encode(),
-        headers={
-            "Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}",
-            "Content-Type": "application/json",
-            "Accept": "application/vnd.github+json",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+        headers={"x-goog-api-key": os.environ["GEMINI_API_KEY"], "Content-Type": "application/json"},
     )
     try:
-        with urllib.request.urlopen(req, timeout=120) as res:
-            raw = res.read().decode("utf-8", "replace")
-            print(f"[models] HTTP {res.status} {res.headers.get('Content-Type')} url={res.url}", file=sys.stderr)
+        with urllib.request.urlopen(req, timeout=180) as res:
+            data = json.load(res)
     except urllib.error.HTTPError as e:
         raise RuntimeError(f"HTTP {e.code}: {e.read().decode('utf-8', 'replace')[:300]}") from e
     try:
-        content = json.loads(raw)["choices"][0]["message"]["content"] or ""
-    except (ValueError, KeyError, IndexError) as e:
-        raise RuntimeError(f"想定外の応答: {raw[:300]}") from e
+        return "".join(p.get("text", "") for p in data["candidates"][0]["content"]["parts"])
+    except (KeyError, IndexError) as e:
+        raise RuntimeError(f"想定外の応答: {json.dumps(data, ensure_ascii=False)[:300]}") from e
+
+
+def summarize_with_gemini(candidates: list[dict], now: datetime) -> dict:
+    lines = [f"[{a['id']}] ({a['source']}) {a['title']} — {_short(a['description'], 150)}" for a in candidates]
+    prompt = f"今日は {now:%Y年%m月%d日} です。候補記事:\n" + "\n".join(lines)
+    errors = []
+    for model in GEMINI_MODELS:
+        try:
+            content = _call_gemini(model, prompt)
+            print(f"[ai] {model} で要約しました", file=sys.stderr)
+            break
+        except Exception as e:
+            errors.append(f"{model}: {e}")
+    else:
+        raise RuntimeError(" / ".join(errors))
     # ```json ... ``` で囲まれて返ってくる場合にも対応
     start, end = content.find("{"), content.rfind("}")
     if start < 0 or end < 0:
@@ -308,7 +343,7 @@ def summarize_with_github_models(articles: list[dict], now: datetime) -> dict:
         )
     if len(items) < 3:
         raise RuntimeError(f"AIの出力が不十分でした({len(items)}件)")
-    return {"headline": str(out.get("headline") or ""), "items": items[:TARGET_COUNT + 2]}
+    return {"headline": str(out.get("headline") or ""), "items": items[: TARGET_COUNT + 2]}
 
 
 def attach_sources(digest: dict, articles: list[dict]) -> list[dict]:
@@ -361,15 +396,17 @@ def main() -> None:
         return
 
     if os.environ.get("ANTHROPIC_API_KEY") and not args.free:
+        enrich_descriptions(articles)
         mode, digest = "ai", summarize(articles, now)
-    elif os.environ.get("GITHUB_TOKEN") and not args.no_ai:
-        try:
-            mode, digest = "github", summarize_with_github_models(articles, now)
-        except Exception as e:  # 無料枠の上限などで失敗しても、AIなしで必ず更新する
-            print(f"[warn] GitHub Models での要約に失敗したためAIなしで作成します: {e}", file=sys.stderr)
-            mode, digest = "free", pick_without_ai(articles)
     else:
-        mode, digest = "free", pick_without_ai(articles)
+        candidates = pick_candidates(articles, CANDIDATE_COUNT)
+        enrich_descriptions(candidates)
+        mode, digest = "free", pick_without_ai(candidates)
+        if os.environ.get("GEMINI_API_KEY") and not args.no_ai:
+            try:
+                mode, digest = "gemini", summarize_with_gemini(candidates, now)
+            except Exception as e:  # 無料枠の上限などで失敗しても、AIなしで必ず更新する
+                print(f"[warn] Gemini での要約に失敗したためAIなしで作成します: {e}", file=sys.stderr)
     date_str = now.strftime("%Y-%m-%d")
     result = {
         "date": date_str,
