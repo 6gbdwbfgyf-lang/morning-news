@@ -237,7 +237,10 @@ def _sentences(text: str, n: int) -> str:
         return text
     cut = text[:n]
     end = cut.rfind("。")
-    return cut[: end + 1] if end >= 20 else _short(text, n)
+    if end >= 20:
+        return cut[: end + 1]
+    out = _short(text, n)
+    return out if out.endswith(("。", "…")) else out + "…"
 
 
 def _short(text: str, n: int) -> str:
