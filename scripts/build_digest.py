@@ -402,6 +402,8 @@ def _wikipedia_summary(term: str, cache: dict) -> dict | None:
         extract = _clean(data.get("extract") or "")
         # 「〇〇（読み方、英語名など）は」の括弧部分を省いて読みやすくする
         extract = re.sub(r"^([^（(]{1,40}?)\s*[（(].*?[）)]\s*(とは|は)", r"\1\2", extract, count=1)
+        # 括弧が閉じずに残った場合(「〇〇（よみがな、とは…」)も省く
+        extract = re.sub(r"^([^（(]{1,40}?)\s*[（(][^）)]*?、?\s*(とは|は、)", r"\1\2", extract, count=1)
         extract = re.sub(r"\s+(は|とは)", r"\1", extract, count=1)
         if data.get("type") == "standard" and extract:
             first = re.split(r"(?<=。)", extract)
@@ -456,10 +458,11 @@ def _check_terms(terms, text: str) -> list[dict]:
 # GEMINI_API_KEY(Google AI Studio で無料発行)があれば使う。
 # 無料枠のモデルは入れ替わることがあるので、順番に試して使えたものを使う。
 GEMINI_MODELS = [m for m in os.environ.get("GEMINI_MODEL", "").split(",") if m] or [
+    "gemini-3.8-flash",
     "gemini-3.6-flash",
     "gemini-3.5-flash-lite",
     "gemini-3.1-flash-lite",
-    "gemini-2.5-flash",
+    "gemma-4-31b-it",
 ]
 CANDIDATE_COUNT = 30
 
@@ -510,15 +513,22 @@ def summarize_with_gemini(candidates: list[dict], now: datetime) -> dict:
         for a in candidates
     ]
     prompt = f"今日は {now:%Y年%m月%d日} です。候補記事:\n" + "\n".join(lines)
-    errors = []
-    for model in GEMINI_MODELS:
-        try:
-            content = _call_gemini(model, prompt)
-            print(f"[ai] {model} で要約しました", file=sys.stderr)
+    import time
+
+    errors, content = [], None
+    # 無料枠は混雑で一時的に断られる(503)ことがあるので、間をあけて最大3周試す
+    for attempt, wait in enumerate((0, 30, 90)):
+        time.sleep(wait)
+        for model in GEMINI_MODELS:
+            try:
+                content = _call_gemini(model, prompt)
+                print(f"[ai] {model} で要約しました({attempt + 1}周目)", file=sys.stderr)
+                break
+            except Exception as e:
+                errors.append(f"{model}: {str(e)[:120]}")
+        if content is not None:
             break
-        except Exception as e:
-            errors.append(f"{model}: {e}")
-    else:
+    if content is None:
         raise RuntimeError(" / ".join(errors))
     # ```json ... ``` で囲まれて返ってくる場合にも対応
     start, end = content.find("{"), content.rfind("}")
