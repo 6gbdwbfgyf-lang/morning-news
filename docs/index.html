@@ -124,7 +124,30 @@
     position: absolute; top: 12px; right: 12px; width: 36px; height: 36px; border: 0; border-radius: 50%;
     background: var(--bg); cursor: pointer; font-size: 1.1rem; line-height: 1;
   }
-  @media (prefers-reduced-motion: reduce) { .sheet, .backdrop { transition: none; } }
+
+  /* 読んだ量のバー(日付バーの下) */
+  .progress { position: absolute; left: 0; bottom: -1px; height: 2px; width: 0; background: var(--link); transition: width .4s ease; }
+  .datebar { position: sticky; }
+
+  /* けさのラインナップ(目次) */
+  .lineup { list-style: none; margin: 18px 0 0; padding: 4px 0; background: var(--surface); border-radius: 14px; }
+  .lineup li { border-top: 1px solid var(--line); }
+  .lineup li:first-child { border-top: 0; }
+  .lineup a {
+    display: grid; grid-template-columns: 1.6em 1fr auto; gap: 8px; align-items: center;
+    padding: 9px 14px; color: inherit; text-decoration: none; font-size: .93rem; line-height: 1.5;
+  }
+  .lineup .rank { color: var(--sub); font-size: .82rem; font-variant-numeric: tabular-nums; }
+  .lineup .t { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lineup .done { color: var(--link); font-size: .8rem; visibility: hidden; }
+  .lineup .read .t { color: var(--sub); }
+  .lineup .read .done { visibility: visible; }
+  .count { margin: 10px 2px 0; font-size: .82rem; color: var(--sub); }
+
+  .story { scroll-margin-top: 64px; }
+  .meta { display: flex; gap: 10px; align-items: baseline; }
+  .rankno { font-size: .82rem; color: var(--sub); font-variant-numeric: tabular-nums; }
+  @media (prefers-reduced-motion: reduce) { .sheet, .backdrop, .progress { transition: none; } }
 </style>
 </head>
 <body>
@@ -133,11 +156,14 @@
     <button class="navbtn" id="prev" type="button">‹ 前の日</button>
     <h1 id="date">けさのニュース</h1>
     <button class="navbtn" id="next" type="button">次の日 ›</button>
+    <div class="progress" id="progress" aria-hidden="true"></div>
   </nav>
 
   <section class="hello">
     <p id="greet">おはようございます</p>
     <h2 id="headline">けさのニュース</h2>
+    <ol class="lineup" id="lineup" aria-label="けさのラインナップ"></ol>
+    <p class="count" id="count"></p>
     <p class="tip" id="tip" hidden><mark>黄色い線</mark>の言葉はタップすると説明が出ます</p>
   </section>
 
@@ -206,8 +232,9 @@ function render() {
     const summary = mark(it.summary, terms, it.n, used);
     const why = it.why_it_matters ? mark(it.why_it_matters, terms, it.n, used) : "";
     const src = (it.sources || [])[0];
-    return `<li class="story${idx === 0 && filter === "すべて" ? " lead" : ""}">
-      <span class="cat" style="--c:${CAT_COLOR[it.category] || "var(--sub)"}">${esc(it.category)}</span>
+    return `<li class="story${idx === 0 && filter === "すべて" ? " lead" : ""}" id="s${it.n}" data-n="${it.n}">
+      <div class="meta"><span class="rankno">${it.n + 1}</span>
+      <span class="cat" style="--c:${CAT_COLOR[it.category] || "var(--sub)"}">${esc(it.category)}</span></div>
       <h3>${title}</h3>
       <p>${summary}</p>
       ${why ? `<p class="why"><b>なぜ大事?</b>${why}</p>` : ""}
@@ -215,7 +242,44 @@ function render() {
     </li>`;
   }).join("");
   $("tip").hidden = !hasTerms;
+  watchReading();
 }
+
+// 読んだ記事の記録(この端末だけに保存)
+let readSet = new Set();
+const readKey = () => `read-${data.date}`;
+function loadRead() {
+  try { readSet = new Set(JSON.parse(localStorage.getItem(readKey()) || "[]")); } catch { readSet = new Set(); }
+}
+function saveRead() { try { localStorage.setItem(readKey(), JSON.stringify([...readSet])); } catch {} }
+function renderLineup() {
+  $("lineup").innerHTML = data.items.map((it, n) => `
+    <li class="${readSet.has(n) ? "read" : ""}"><a href="#s${n}" data-jump="${n}">
+      <span class="rank">${n + 1}</span><span class="t">${esc(it.title)}</span><span class="done">読んだ</span>
+    </a></li>`).join("");
+  const total = data.items.length, done = readSet.size;
+  $("count").textContent = done === 0 ? "見出しをタップするとその記事に移動します"
+    : done >= total ? "全部読みました。いってらっしゃい" : `${total}本中 ${done}本 読みました`;
+  $("progress").style.width = `${(done / total) * 100}%`;
+}
+function watchReading() { checkRead(); }
+// 記事の最後の行が画面の下15%より上に来たら「読んだ」にする
+function checkRead() {
+  if (!data) return;
+  let changed = false;
+  document.querySelectorAll(".story").forEach((story) => {
+    const n = +story.dataset.n;
+    if (readSet.has(n)) return;
+    if (story.lastElementChild.getBoundingClientRect().bottom < innerHeight * 0.85) { readSet.add(n); changed = true; }
+  });
+  if (changed) { saveRead(); renderLineup(); }
+}
+let ticking = false;
+addEventListener("scroll", () => {
+  if (ticking) return;
+  ticking = true;
+  requestAnimationFrame(() => { ticking = false; checkRead(); });
+}, { passive: true });
 
 async function load(date) {
   current = date;
@@ -231,12 +295,14 @@ async function load(date) {
     return;
   }
   filter = "すべて";
+  loadRead();
   const isToday = i === 0;
   $("date").textContent = fmtDate(data.date);
   $("greet").textContent = isToday ? "おはようございます" : fmtDate(data.date, true) + " のニュース";
   const n = data.items.length;
   $("headline").textContent = data.headline || `けさのニュースは${n}本。${Math.max(2, Math.round(n * 0.3))}分で読めます`;
   render();
+  renderLineup();
   const t = new Date(data.generated_at).toLocaleTimeString("ja-JP", { hour: "2-digit", minute: "2-digit", timeZone: "Asia/Tokyo" });
   const how = data.mode === "free" ? "配信元の記事から選びました" : `AI(${data.mode === "gemini" ? "Gemini" : "Claude"})が選んで要約しました`;
   $("foot").textContent = `${t} 更新。${data.article_count}本の記事から${how}。用語の説明はWikipediaなどによるものです。`;
@@ -266,6 +332,13 @@ function closeSheet() {
 document.addEventListener("click", (e) => {
   const term = e.target.closest(".term");
   if (term) return openSheet(term);
+  const jump = e.target.closest("[data-jump]");
+  if (jump) {
+    e.preventDefault();
+    if (filter !== "すべて") { filter = "すべて"; render(); }
+    document.getElementById("s" + jump.dataset.jump)?.scrollIntoView({ behavior: matchMedia("(prefers-reduced-motion: reduce)").matches ? "auto" : "smooth" });
+    return;
+  }
   const chip = e.target.closest(".chip");
   if (chip) { filter = chip.dataset.cat; render(); }
 });
