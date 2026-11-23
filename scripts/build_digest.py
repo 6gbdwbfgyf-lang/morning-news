@@ -107,8 +107,11 @@ def collect_articles(now: datetime) -> list[dict]:
     articles: list[dict] = []
     for source, url in FEEDS:
         feed = feedparser.parse(url, agent="morning-news-digest/1.0")
-        if feed.bozo and not feed.entries:
-            print(f"[warn] {source} を取得できませんでした: {feed.bozo_exception}", file=sys.stderr)
+        status = getattr(feed, "status", "?")
+        print(f"[feed] {source}: HTTP {status}, {len(feed.entries)}件", file=sys.stderr)
+        if not feed.entries:
+            if feed.bozo:
+                print(f"[warn] {source} を読めませんでした: {feed.bozo_exception}", file=sys.stderr)
             continue
         for e in feed.entries:
             link = e.get("link", "")
@@ -173,7 +176,8 @@ FEED_CATEGORY = {
 # 無料モードで記事を選ぶ順番(編集部が選んだ「主要」を優先し、その後ジャンルを順番に回る)
 FREE_ORDER = [
     "NHK 主要", "Yahoo!ニュース 主要", "NHK 政治", "NHK 経済", "NHK 国際",
-    "NHK 社会", "NHK 科学・医療", "NHK スポーツ", "Yahoo!ニュース IT",
+    "NHK 社会", "NHK 科学・医療", "NHK スポーツ", "Yahoo!ニュース 国内",
+    "Yahoo!ニュース 国際", "Yahoo!ニュース 経済", "Yahoo!ニュース IT",
 ]
 
 
@@ -244,6 +248,7 @@ GITHUB_PROMPT = f"""あなたは日本の朝のニュース番組の編集者で
 
 
 def summarize_with_github_models(articles: list[dict], now: datetime) -> dict:
+    import urllib.error
     import urllib.request
 
     candidates = pick_candidates(articles, CANDIDATE_COUNT)
@@ -267,9 +272,20 @@ def summarize_with_github_models(articles: list[dict], now: datetime) -> dict:
             "Accept": "application/json",
         },
     )
-    with urllib.request.urlopen(req, timeout=120) as res:
-        data = json.load(res)
-    out = json.loads(data["choices"][0]["message"]["content"])
+    try:
+        with urllib.request.urlopen(req, timeout=120) as res:
+            raw = res.read().decode("utf-8", "replace")
+    except urllib.error.HTTPError as e:
+        raise RuntimeError(f"HTTP {e.code}: {e.read().decode('utf-8', 'replace')[:300]}") from e
+    try:
+        content = json.loads(raw)["choices"][0]["message"]["content"] or ""
+    except (ValueError, KeyError, IndexError) as e:
+        raise RuntimeError(f"想定外の応答: {raw[:300]}") from e
+    # ```json ... ``` で囲まれて返ってくる場合にも対応
+    start, end = content.find("{"), content.rfind("}")
+    if start < 0 or end < 0:
+        raise RuntimeError(f"JSONが含まれていません: {content[:300]}")
+    out = json.loads(content[start : end + 1])
 
     valid_ids = {a["id"] for a in candidates}
     items = []
