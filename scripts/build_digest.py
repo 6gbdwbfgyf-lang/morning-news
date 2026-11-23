@@ -116,7 +116,7 @@ def collect_articles(now: datetime) -> list[dict]:
             continue
         for e in feed.entries:
             link = e.get("link", "")
-            title = (e.get("title") or "").strip()
+            title = _clean(e.get("title") or "")
             key = link or title
             if not title or key in seen:
                 continue
@@ -133,7 +133,7 @@ def collect_articles(now: datetime) -> list[dict]:
                     "id": len(articles) + 1,
                     "source": source,
                     "title": title,
-                    "description": (e.get("summary") or "").strip()[:300],
+                    "description": _clean(e.get("summary") or "")[:300],
                     "link": link,
                     "published": published.astimezone(JST).strftime("%m/%d %H:%M") if published else "",
                 }
@@ -205,6 +205,14 @@ def pick_candidates(articles: list[dict], count: int) -> list[dict]:
     return picked
 
 
+_INVISIBLE = re.compile("[\u200b-\u200f\u2060-\u2064\ufeff\u00ad]")
+
+
+def _clean(text: str) -> str:
+    """記事に紛れ込んでいる見えない文字(ゼロ幅スペースなど)を取り除く。"""
+    return _INVISIBLE.sub("", text).strip()
+
+
 def _short(text: str, n: int) -> str:
     return text if len(text) <= n else text[:n] + "…"
 
@@ -251,7 +259,7 @@ def enrich_descriptions(articles: list[dict]) -> None:
 
     def work(a: dict) -> None:
         try:
-            a["description"] = _fetch_description(a["link"])
+            a["description"] = _clean(_fetch_description(a["link"]))
         except Exception as e:
             print(f"[warn] 概要の取得に失敗: {a['title']} ({e})", file=sys.stderr)
 
