@@ -1,6 +1,6 @@
 {
   "date": "2026-11-24",
-  "generated_at": "2026-11-24T01:27+09:00",
+  "generated_at": "2026-11-24T01:28+09:00",
   "mode": "free",
   "headline": "",
   "items": [
@@ -27,6 +27,45 @@
           "name": "Yahoo!ニュース 主要",
           "title": "米大統領 フアン氏のCEO復帰歓迎",
           "url": "https://news.yahoo.co.jp/pickup/6603733?source=rss"
+        }
+      ]
+    },
+    {
+      "title": "気圧低下 24日は頭痛やめまい注意",
+      "summary": "",
+      "why_it_matters": "",
+      "category": "社会",
+      "sources": [
+        {
+          "name": "Yahoo!ニュース 国内",
+          "title": "気圧低下 24日は頭痛やめまい注意",
+          "url": "https://news.yahoo.co.jp/pickup/6603682?source=rss"
+        }
+      ]
+    },
+    {
+      "title": "トランプ氏 イラン再攻撃に言及",
+      "summary": "",
+      "why_it_matters": "",
+      "category": "国際",
+      "sources": [
+        {
+          "name": "Yahoo!ニュース 国際",
+          "title": "トランプ氏 イラン再攻撃に言及",
+          "url": "https://news.yahoo.co.jp/pickup/6603648?source=rss"
+        }
+      ]
+    },
+    {
+      "title": "地銀など定期預金金利を大幅上げ",
+      "summary": "",
+      "why_it_matters": "",
+      "category": "経済",
+      "sources": [
+        {
+          "name": "Yahoo!ニュース 経済",
+          "title": "地銀など定期預金金利を大幅上げ",
+          "url": "https://news.yahoo.co.jp/pickup/6603719?source=rss"
         }
       ]
     },
@@ -70,80 +109,28 @@
       ]
     },
     {
-      "title": "攻撃急増 背景にセキュリティ軽視",
+      "title": "首相の国会出席削減 自民が議論",
       "summary": "",
       "why_it_matters": "",
-      "category": "科学・IT",
+      "category": "社会",
       "sources": [
         {
-          "name": "Yahoo!ニュース IT",
-          "title": "攻撃急増 背景にセキュリティ軽視",
-          "url": "https://news.yahoo.co.jp/pickup/6603626?source=rss"
+          "name": "Yahoo!ニュース 国内",
+          "title": "首相の国会出席削減 自民が議論",
+          "url": "https://news.yahoo.co.jp/pickup/6603632?source=rss"
         }
       ]
     },
     {
-      "title": "交番で警官死亡 拳銃使われた形跡",
+      "title": "ガソリン価格下落 米大統領恨み節",
       "summary": "",
       "why_it_matters": "",
-      "category": "主要",
+      "category": "国際",
       "sources": [
         {
-          "name": "Yahoo!ニュース 主要",
-          "title": "交番で警官死亡 拳銃使われた形跡",
-          "url": "https://news.yahoo.co.jp/pickup/6603711?source=rss"
-        }
-      ]
-    },
-    {
-      "title": "年収1000万円 社内ニートの不安",
-      "summary": "",
-      "why_it_matters": "",
-      "category": "主要",
-      "sources": [
-        {
-          "name": "Yahoo!ニュース 主要",
-          "title": "年収1000万円 社内ニートの不安",
-          "url": "https://news.yahoo.co.jp/pickup/6603718?source=rss"
-        }
-      ]
-    },
-    {
-      "title": "タワーレコード 1100万件情報流出",
-      "summary": "",
-      "why_it_matters": "",
-      "category": "科学・IT",
-      "sources": [
-        {
-          "name": "Yahoo!ニュース IT",
-          "title": "タワーレコード 1100万件情報流出",
-          "url": "https://news.yahoo.co.jp/pickup/6603588?source=rss"
-        }
-      ]
-    },
-    {
-      "title": "藤浪をなぜ獲得 オリ本部長が説明",
-      "summary": "",
-      "why_it_matters": "",
-      "category": "主要",
-      "sources": [
-        {
-          "name": "Yahoo!ニュース 主要",
-          "title": "藤浪をなぜ獲得 オリ本部長が説明",
-          "url": "https://news.yahoo.co.jp/pickup/6603728?source=rss"
-        }
-      ]
-    },
-    {
-      "title": "麻生久美子 髪の毛30cm大胆カット",
-      "summary": "",
-      "why_it_matters": "",
-      "category": "主要",
-      "sources": [
-        {
-          "name": "Yahoo!ニュース 主要",
-          "title": "麻生久美子 髪の毛30cm大胆カット",
-          "url": "https://news.yahoo.co.jp/pickup/6603727?source=rss"
+          "name": "Yahoo!ニュース 国際",
+          "title": "ガソリン価格下落 米大統領恨み節",
+          "url": "https://news.yahoo.co.jp/pickup/6603686?source=rss"
         }
       ]
     }
